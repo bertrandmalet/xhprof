@@ -47,10 +47,16 @@ foreach ($raw_data[0] as $parent_child=>$info) {
         'info' => $info
     );
 }
+
+$symbols = array_flip($symbols);
+foreach ($symbols as $k=>$symbol) {
+    $symbols[$k] = $flat_data[$symbol]+array('name'=>$symbol);
+}
+
 ?>
 <style>
 svg {
-    font: 10px sans-serif;
+    font: 8px sans-serif;
 }
 .background {
     fill: #EEEEEE;
@@ -58,41 +64,62 @@ svg {
 line {
     stroke: #FFFFFF;
 }
+text.active {
+    fill: #0066FF;
+    font: 15px sans-serif;
+    font-weight: bold;
+}
+.cell {
+    fill: #0066FF;
+}
 </style>
+<select id="order">
+<?php foreach (array_keys($symbols[0]) as $k):?>
+<option value="<?php echo $k?>"><?php echo $k?></option>
+<?php endforeach;?>
+</select>
+
 <script type="text/javascript">
-var symbols = <?php echo json_encode(array_keys($symbols));?>;
+var symbols = <?php echo json_encode($symbols);?>;
 var links = <?php echo json_encode($links);?>;
-var margin = {top: 80, right: 0, bottom: 10, left: 80},
+var margin = {top: 120, right: 0, bottom: 10, left: 120},
     width = 1200, 
     height = width;
 
+var matrix = [];
+var nbSymbols = symbols.length;
+    
 var svg = d3.select("body").append("svg")
     .attr("width", width + margin.left + margin.right)
     .attr("height", height + margin.top + margin.bottom)
   .append("g")
     .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
     
-var z = d3.scale.linear().domain([0, 100]).clamp(true);
+var orders = {
+    name: d3.range(nbSymbols).sort(function(a, b) { return d3.ascending(symbols[a].name, symbols[b].name); }),
+};
+d3.keys(symbols[0]).forEach(function(key, i) {
+	orders[key] = d3.range(nbSymbols).sort(function(a, b) { return symbols[b][key] - symbols[a][key]; });
+});
+
+var z = d3.scale.linear().domain([0, 50]).clamp(true);
 var x = d3.scale.ordinal().rangeBands([0, width]);
-x.domain(symbols);
+x.domain(orders.wt);
 
 svg.append("rect")
     .attr("class", "background")
     .attr("width", width)
     .attr("height", height);
 
-var matrix = [];
-var nbSymbols = symbols.length;
+
 
 symbols.forEach(function(symbol, i) {
     matrix[i] = d3.range(nbSymbols).map(function(j) { return {x: j, y: i, z: 0}; });
 });
 
 links.forEach(function(link) {
-    matrix[link.source][link.target].z += link.info.wt;
-    matrix[link.target][link.source].z += link.info.wt;
-    matrix[link.source][link.source].z += link.info.wt;
-    matrix[link.target][link.target].z += link.info.wt;
+    matrix[link.source][link.target].z = link.info.wt;
+    matrix[link.target][link.source].z = link.info.wt;
 });
 
 var row = svg.selectAll(".row")
@@ -110,7 +137,7 @@ row.append("text")
     .attr("y", x.rangeBand() / 2)
     .attr("dy", ".32em")
     .attr("text-anchor", "start")
-    .text(function(d, i) { return symbols[i]; });
+    .text(function(d, i) { return symbols[i].name; });
 
     
 var column = svg.selectAll(".column")
@@ -127,7 +154,7 @@ column.append("text")
     .attr("y", x.rangeBand() / 2)
     .attr("dy", ".32em")
     .attr("text-anchor", "start")
-    .text(function(d, i) { return symbols[i]; });
+    .text(function(d, i) { return symbols[i].name; });
 
 function row(row) {
     var cell = d3.select(this).selectAll(".cell")
@@ -137,6 +164,41 @@ function row(row) {
         .attr("x", function(d, i) { return x(d.x); })
         .attr("width", x.rangeBand())
         .attr("height", x.rangeBand())
-        .style("fill-opacity", function(d) { return z(d.z); });
+        .style("fill-opacity", function(d) { return z(d.z); })
+        .on("mouseover", mouseover)
+        .on("mouseout", mouseout)
+        .on("click", function (p) {
+            alert(symbols[p.y].name+'/'+symbols[p.x].name+'='+p.z);
+        });
 }
+
+function mouseover(p) {
+    d3.selectAll(".row text").classed("active", function(d, i) { return i == p.y; });
+    d3.selectAll(".column text").classed("active", function(d, i) { return i == p.x; });
+}
+
+function mouseout() {
+    d3.selectAll("text").classed("active", false);
+}
+
+function order(value) {
+    x.domain(orders[value]);
+    
+    var t = svg.transition().duration(2500);
+    
+    t.selectAll(".row")
+        .delay(function(d, i) { return x(i) * 4; })
+        .attr("transform", function(d, i) { return "translate(0," + x(i) + ")"; })
+      .selectAll(".cell")
+        .delay(function(d) { return x(d.x) * 4; })
+        .attr("x", function(d) { return x(d.x); });
+    
+    t.selectAll(".column")
+        .delay(function(d, i) { return x(i) * 4; })
+        .attr("transform", function(d, i) { return "translate(" + x(i) + ")rotate(-90)"; });
+}
+
+d3.select("#order").on("change", function() {
+    order(this.value);
+});
 </script>
